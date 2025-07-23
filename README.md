@@ -57,4 +57,4 @@ python olx_crawler.py
 
 ---
 
-Desenvolvido com fins educacionais.
+PROJETO EM DESENVOLVIMENTO!!!
