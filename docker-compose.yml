@@ -1,27 +1,27 @@
-version: '3.8'
-
 services:
-  scraper:
-    build: .
-    volumes:
-      - .:/app
-    container_name: vehicle_scraper
-    depends_on:
-      - db
-
-  db:
+  mysql:
     image: mysql:8.0
-    container_name: mysql_db
-    restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: vehicles
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: olx_data
       MYSQL_USER: user
-      MYSQL_PASSWORD: password
-    ports:
-      - "3306:3306"
+      MYSQL_PASSWORD: userpass
     volumes:
-      - mysql_data:/var/lib/mysql
+      - mysql-data:/var/lib/mysql
+    ports:
+      - "3307:3306"
+
+  app:
+    build: .
+    depends_on:
+      - mysql
+    environment:
+      DB_HOST: mysql
+      DB_USER: user
+      DB_PASSWORD: userpass
+      DB_NAME: olx_data
+    volumes:
+      - ./app:/app
 
 volumes:
-  mysql_data:
+  mysql-data:
