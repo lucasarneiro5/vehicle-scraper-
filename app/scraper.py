@@ -1,33 +1,44 @@
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait, Select
+from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.common.exceptions import TimeoutException, WebDriverException
+from bs4 import BeautifulSoup
 import time
 import pandas as pd
-from bs4 import BeautifulSoup
-from selenium.webdriver.chrome.service import Service
-from selenium import webdriver
 import os
 import mysql.connector
 
-#driver_path = "driver/chromedriver"  # ou chromedriver.exe no Windows
-#service = Service(driver_path)
-#driver = webdriver.Chrome(service=service)
-
-
+# Configura o driver para usar o container Selenium
 def configurar_driver():
     options = Options()
-    options.add_argument("--headless=new")
-    options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
+    #options.add_argument("--headless=new")
     options.add_argument("--disable-gpu")
-    options.add_argument("--ignore-certificate-errors")
-    return webdriver.Chrome(options=options)
-    
+    options.add_argument("--window-size=1920,1080")
+    try:
+        driver = webdriver.Remote(
+            command_executor="http://selenium:4444/wd/hub",
+            options=options
+        )
+        return driver
+    except WebDriverException as e:
+        print("Erro ao conectar com o Selenium:", e)
+        exit(1)
 
+def esperar_anuncios(driver, timeout=15):
+    try:
+        WebDriverWait(driver, timeout).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, 'li.sc-1fcmfeb-2'))  # Ajuste o seletor conforme o HTML atual da OLX
+        )
+        return True
+    except TimeoutException:
+        print("⏰ Timeout esperando anúncios carregarem.")
+        return False
+
+# Aceita cookies no site
 def aceitar_cookies(driver):
     try:
         botao = WebDriverWait(driver, 5).until(
@@ -37,149 +48,103 @@ def aceitar_cookies(driver):
     except TimeoutException:
         pass
 
-def selecionar_estado_e_buscar(driver, estado_value):
-    wait = WebDriverWait(driver, 10)
-
-    try:
-        autos = wait.until(EC.element_to_be_clickable((By.XPATH, '//p[text()="Autos"]')))
-        autos.click()
-        print("🚘 Clicou em 'Autos'")
-    except Exception as e:
-        print("❌ Não encontrou o botão Autos:", e)
-        return
-
-    time.sleep(3)
-
-    dropdown = wait.until(EC.presence_of_element_located((By.ID, "location-selector")))
-    select = Select(dropdown)
-    select.select_by_value(estado_value)
-    print(f"✅ Estado selecionado: {estado_value.upper()}")
-
-    time.sleep(2)
-
-    aceitar_cookies(driver)
-
-    try:
-        botao = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.ID, "search-bar-search-button"))
-        )
-        botao.click()
-        print("[✔] Botão 'Buscar' clicado com sucesso.")
-    except Exception as e:
-        print(f"[!] Erro ao clicar no botão 'Buscar': {e}")
-
-    time.sleep(3)
-
-def extrair_dados(driver, estado):
-    soup = BeautifulSoup(driver.page_source, 'html.parser')
+# Extrai dados da página HTML
+def extrair_dados(html, estado):
+    soup = BeautifulSoup(html, 'html.parser')
     anuncios = soup.find_all('section', class_='olx-adcard')
     dados = []
-
     for anuncio in anuncios:
-        # Título
-        titulo_tag = anuncio.find('h2', class_='olx-adcard__title')
-        titulo = titulo_tag.text.strip() if titulo_tag else None
-
-
-        # Quilometragem
+        titulo = anuncio.find('h2', class_='olx-adcard__title')
+        preco = anuncio.find('h3', class_='olx-adcard__price')
         km_tag = anuncio.find('div', class_='olx-adcard__detail')
-        km = km_tag.text.strip() if km_tag else None
-
-        # Preço
-        preco_tag = anuncio.find('h3', class_='olx-adcard__price')
-        preco = preco_tag.text.strip() if preco_tag else None
-
         dados.append({
-            'titulo': titulo,
-            'km': km,
-            'preco': preco,
+            'titulo': titulo.text.strip() if titulo else None,
+            'km': km_tag.text.strip() if km_tag else None,
+            'preco': preco.text.strip() if preco else None,
             'estado': estado
         })
-
     return dados
 
-
+# Salva os dados no banco MySQL
 def salvar_no_mysql(dados):
-    conexao = mysql.connector.connect(
-        host=os.getenv("MYSQL_HOST"),
-        user=os.getenv("MYSQL_USER"),
-        password=os.getenv("MYSQL_PASSWORD"),
-        database=os.getenv("MYSQL_DATABASE")
-    )
-    cursor = conexao.cursor()
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS veiculos (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            titulo VARCHAR(255),
-            km VARCHAR(255),
-            preco VARCHAR(255),
-            estado VARCHAR(2)
+    try:
+        conexao = mysql.connector.connect(
+            host=os.getenv("MYSQL_HOST", "db"),
+            user=os.getenv("MYSQL_USER", "root"),
+            port=int(os.getenv("MYSQL_PORT", 3306)),
+            password=os.getenv("MYSQL_PASSWORD", "root"),
+            database=os.getenv("MYSQL_DATABASE", "olx_data")
         )
-    """)
-
-    for item in dados:
+        cursor = conexao.cursor()
         cursor.execute("""
-            INSERT INTO veiculos (titulo, km, preco, estado)
-            VALUES (%s, %s, %s, %s)
-        """, (item['titulo'], item['km'], item['preco'], item['estado']))
+            CREATE TABLE IF NOT EXISTS veiculos (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                titulo VARCHAR(255),
+                km VARCHAR(255),
+                preco VARCHAR(255),
+                estado VARCHAR(2)
+            )
+        """)
+        for item in dados:
+            cursor.execute("""
+                INSERT INTO veiculos (titulo, km, preco, estado)
+                VALUES (%s, %s, %s, %s)
+            """, (item['titulo'], item['km'], item['preco'], item['estado']))
+        conexao.commit()
+        cursor.close()
+        conexao.close()
+    except mysql.connector.Error as err:
+        print("Erro ao salvar no MySQL:", err)
 
-    conexao.commit()
-    cursor.close()
-    conexao.close()
-
-
-
+# Loop principal por estado e paginação
 def main():
-    estados = ["ac"]
+    estados = [
+        "ac", "al", "ap", "am", "ba", "ce", "df", "es", "go", "ma", "mt", "ms", "mg",
+        "pa", "pb", "pr", "pe", "pi", "rj", "rn", "rs", "ro", "rr", "sc", "sp", "se", "to"
+    ]
 
     driver = configurar_driver()
 
     for estado in estados:
         print(f"\n🚗 Coletando dados do estado: {estado.upper()}")
-        driver.get("https://www.olx.com.br/")
+        base_url = f"https://www.olx.com.br/autos-e-pecas/carros-vans-e-utilitarios/estado-{estado}?lis=home_body_search_bar_2020"
+        driver.get(base_url)
+
+        esperar_anuncios(driver)
         aceitar_cookies(driver)
-        selecionar_estado_e_buscar(driver, estado)
-        time.sleep(3)
+        time.sleep(2)
 
         todos_os_dados = []
         pagina = 1
+        ultima_pagina_html = ""
 
         while True:
             print(f"📄 Coletando página {pagina}")
-            dados = extrair_dados(driver)
+            dados = extrair_dados(driver.page_source, estado)
             if not dados:
                 print("⚠️ Nenhum dado encontrado. Encerrando.")
                 break
 
             todos_os_dados.extend(dados)
 
-            try:
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight * 0.75);")
-                time.sleep(2)
+            proxima_url = f"{base_url}&o={pagina + 1}"
+            driver.get(proxima_url)
+            time.sleep(3)
 
-                proxima_pagina = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, '//a[contains(text(), "Próxima página")]'))
-                )
-
-                proxima_href = proxima_pagina.get_attribute("href")
-                print(f"➡️ Indo para a próxima página: {proxima_href}")
-                driver.get(proxima_href)
-                time.sleep(3)
-                pagina += 1
-            except:
-                print("🔚 Fim da paginação.")
+            # Detecção de fim da paginação
+            nova_pagina_html = driver.page_source
+            if nova_pagina_html == ultima_pagina_html:
+                print("🔚 Fim da paginação detectado.")
                 break
 
-        driver.quit()
+            ultima_pagina_html = nova_pagina_html
+            pagina += 1
 
         df = pd.DataFrame(todos_os_dados)
         print(df.head())
+        print(f"🧾 Total de dados do estado {estado.upper()}: {len(df)}")
 
         salvar_no_mysql(todos_os_dados)
-        print(f"💾 {len(todos_os_dados)} registros salvos no banco para o estado {estado.upper()}")
+        print(f"💾 {len(todos_os_dados)} registros salvos no banco para {estado.upper()}")
 
-
-
-if __name__ == "__main__":
-    main()
+    driver.quit()

@@ -1,11 +1,6 @@
-requests
+selenium
+webdriver-manager
 beautifulsoup4
 pandas
-lxml
-sqlalchemy
-pymysql
-selenium==4.20.0
-webdriver-manager
 mysql-connector-python
 python-dotenv
-

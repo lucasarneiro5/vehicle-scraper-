@@ -1,27 +1,47 @@
+version: '3.8'
+
 services:
-  mysql:
+  db:
     image: mysql:8.0
+    container_name: vehicle-scraper-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: olx_data
-      MYSQL_USER: user
-      MYSQL_PASSWORD: userpass
-    volumes:
-      - mysql-data:/var/lib/mysql
     ports:
-      - "3307:3306"
+      - "3308:3306"
+    volumes:
+      - ./init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  selenium:
+    image: selenium/standalone-chrome:latest
+    container_name: vehicle-scraper-selenium
+    ports:
+      - "4444:4444"
+    shm_size: '2gb'
 
   app:
-    build: .
-    depends_on:
-      - mysql
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vehicle-scraper-app
     environment:
-      DB_HOST: mysql
-      DB_USER: user
-      DB_PASSWORD: userpass
-      DB_NAME: olx_data
+      - SELENIUM_URL=http://selenium:4444/wd/hub
+      - MYSQL_HOST=db
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=root
+      - MYSQL_DATABASE=olx_data
+    depends_on:
+      db:
+        condition: service_healthy
+      selenium:
+        condition: service_started
     volumes:
-      - ./app:/app
-
-volumes:
-  mysql-data:
+      - ./app:/app/app
+      - ./init:/app/init
+      - ./debug:/app
+    command: ["python", "app/main.py"]
