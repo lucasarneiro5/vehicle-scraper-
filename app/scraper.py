@@ -3,7 +3,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager
 from selenium.common.exceptions import TimeoutException, WebDriverException
+from selenium.webdriver.chrome.service import Service
 from bs4 import BeautifulSoup
 import time
 import pandas as pd
@@ -11,7 +13,7 @@ import os
 import mysql.connector
 
 # Configura o driver para usar o container Selenium
-def configurar_driver():
+def configurar_driver_docker():
     options = Options()
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
@@ -19,6 +21,7 @@ def configurar_driver():
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
     try:
+        
         driver = webdriver.Remote(
             command_executor="http://selenium:4444/wd/hub",
             options=options
@@ -26,6 +29,30 @@ def configurar_driver():
         return driver
     except WebDriverException as e:
         print("Erro ao conectar com o Selenium:", e)
+        exit(1)
+
+def configurar_driver_local():
+    options = Options()
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    #options.add_argument("--headless=new")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
+
+    try:
+        if os.getenv("LOCAL") == "1":
+            # ChromeDriver local
+            service = Service(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=options)
+        else:
+            # Container Selenium remoto
+            driver = webdriver.Remote(
+                command_executor="http://selenium:4444/wd/hub",
+                options=options
+            )
+        return driver
+    except WebDriverException as e:
+        print("Erro ao iniciar o WebDriver:", e)
         exit(1)
 
 def esperar_anuncios(driver, timeout=15):
@@ -103,7 +130,7 @@ def main():
         "pa", "pb", "pr", "pe", "pi", "rj", "rn", "rs", "ro", "rr", "sc", "sp", "se", "to"
     ]
 
-    driver = configurar_driver()
+    driver = configurar_driver_local()
 
     for estado in estados:
         print(f"\n🚗 Coletando dados do estado: {estado.upper()}")

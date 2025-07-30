@@ -43,5 +43,6 @@ services:
     volumes:
       - ./app:/app/app
       - ./init:/app/init
-      - ./debug:/app
+      - ./debug:/app/debug
+
     command: ["python", "app/main.py"]

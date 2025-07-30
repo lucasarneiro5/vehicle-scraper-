@@ -1,6 +1,5 @@
 from dotenv import load_dotenv
 import scraper
-from webdriver_manager.chrome import ChromeDriverManager
 
 load_dotenv()
 

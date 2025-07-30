@@ -1,6 +1,6 @@
-selenium
-webdriver-manager
-beautifulsoup4
-pandas
-mysql-connector-python
-python-dotenv
+selenium>=4.10.0
+webdriver-manager==4.0.1
+beautifulsoup4>=4.12.2
+pandas>=2.0.3
+mysql-connector-python>=8.0.33
+python-dotenv>=1.0.0
